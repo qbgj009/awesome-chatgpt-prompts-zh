@@ -95,6 +95,7 @@
       width: min(94vw, 780px);
       height: auto;
       transform: rotateX(14deg);
+      filter: saturate(1.08) contrast(1.03);
     }
     .tips {
       width: min(96vw, 860px);
@@ -144,6 +145,7 @@
 
   <script>
     const TILE = 60;
+    const LIGHT = { x: -0.62, y: -0.45, z: 0.64 };
     const TYPES = { WALL:'#', FLOOR:'.', GOAL:'G', PLAYER:'P', BOX:'B', SPIKE:'S', DUNGEON:'D', PORTAL:'T' };
 
     const LEVELS = [
@@ -243,6 +245,7 @@
       deadlockedBoxes: new Set(),
       lastDir: {x:0,y:1},
       message: '状态：进行中',
+      animTime: 0,
     };
 
     const canvas = document.getElementById('game');
@@ -411,7 +414,25 @@
       ctx.strokeRect(px+2, py, TILE-4, TILE-8);
     }
 
-    function draw(){
+    function calcTileLight(x, y){
+      const nx = ((Math.sin(x * 1.9 + y * 0.7) + 1) * 0.5 - 0.5) * 0.55;
+      const ny = ((Math.cos(x * 0.9 - y * 1.4) + 1) * 0.5 - 0.5) * 0.55;
+      const nz = Math.sqrt(Math.max(0.2, 1 - nx*nx - ny*ny));
+      return Math.max(0.25, nx * LIGHT.x + ny * LIGHT.y + nz * LIGHT.z);
+    }
+
+    function drawOutlineRect(px, py, w, h, color){
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(px, py, w, h);
+      ctx.lineWidth = 1;
+    }
+
+    function draw(time = performance.now()){
+      state.animTime = time;
+      const t = time * 0.001;
+      const idleBob = Math.sin(t * 3.2) * 2.2;
+      const glow = (Math.sin(t * 2.1) + 1) * 0.5;
       ctx.clearRect(0,0,canvas.width,canvas.height);
 
       for (let y=0; y<state.grid.length; y++) {
@@ -424,8 +445,10 @@
           }
 
           // grass-like floor
+          const light = calcTileLight(x, y);
           const grd = ctx.createLinearGradient(px,py,px,py+TILE);
-          grd.addColorStop(0,'#7bd16b'); grd.addColorStop(1,'#4ea94b');
+          grd.addColorStop(0,`hsl(${116 + light * 8} 57% ${54 + light * 7}%)`);
+          grd.addColorStop(1,`hsl(${112 + light * 5} 49% ${38 + light * 6}%)`);
           ctx.fillStyle = grd;
           ctx.fillRect(px, py, TILE, TILE);
 
@@ -461,6 +484,10 @@
             ctx.beginPath();
             ctx.arc(px+TILE/2, py+TILE/2, 14, 0, Math.PI*2);
             ctx.stroke();
+            ctx.strokeStyle = `rgba(181,175,255,${0.35 + glow * 0.35})`;
+            ctx.beginPath();
+            ctx.arc(px+TILE/2, py+TILE/2, 9, 0, Math.PI*2);
+            ctx.stroke();
             ctx.lineWidth = 1;
           }
 
@@ -485,6 +512,19 @@
         }
       }
 
+      // Shadow layer (3D2 style grounding)
+      for (const k of state.boxes) {
+        const {x,y}=fromKey(k); const px=x*TILE, py=y*TILE;
+        ctx.fillStyle = 'rgba(0,0,0,.23)';
+        ctx.beginPath();
+        ctx.ellipse(px+TILE/2+4, py+TILE-7, 16, 8, -0.2, 0, Math.PI*2);
+        ctx.fill();
+      }
+      ctx.fillStyle = 'rgba(0,0,0,.25)';
+      ctx.beginPath();
+      ctx.ellipse(state.player.x*TILE+TILE/2+5, state.player.y*TILE+TILE-7, 14, 8, -0.25, 0, Math.PI*2);
+      ctx.fill();
+
       for (const k of state.boxes) {
         const {x,y}=fromKey(k); const px=x*TILE, py=y*TILE;
         drawTile3D(x,y,'#e8b963','#b37d35');
@@ -492,6 +532,7 @@
         ctx.fillRect(px+8,py+10,TILE-16,TILE-20);
         ctx.strokeStyle = '#6b481d';
         ctx.beginPath(); ctx.moveTo(px+8,py+10); ctx.lineTo(px+TILE-8,py+TILE-10); ctx.stroke();
+        drawOutlineRect(px+5, py+5, TILE-10, TILE-12, 'rgba(255,238,180,.55)');
 
         if (state.deadlockedBoxes.has(k)) {
           ctx.strokeStyle = '#ff4e4e';
@@ -504,13 +545,16 @@
       const p = state.player;
       const px=p.x*TILE, py=p.y*TILE;
       drawTile3D(p.x,p.y,'#5ed0ff','#2f8faf');
+      ctx.fillStyle = `rgba(255,255,255,${0.14 + glow * 0.14})`;
+      ctx.fillRect(px+4, py+4, TILE-10, 9);
       ctx.fillStyle='#e9faff';
-      ctx.beginPath(); ctx.arc(px+TILE/2,py+20,9,0,Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(px+TILE/2,py+20+idleBob,9,0,Math.PI*2); ctx.fill();
       ctx.fillStyle='#17394f';
-      ctx.beginPath(); ctx.arc(px+TILE/2-3,py+19,1.5,0,Math.PI*2); ctx.fill();
-      ctx.beginPath(); ctx.arc(px+TILE/2+3,py+19,1.5,0,Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(px+TILE/2-3,py+19+idleBob,1.5,0,Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(px+TILE/2+3,py+19+idleBob,1.5,0,Math.PI*2); ctx.fill();
       ctx.fillStyle='#1f4e69';
-      ctx.fillRect(px+20,py+30,20,14);
+      ctx.fillRect(px+20,py+30+idleBob,20,14);
+      drawOutlineRect(px+6, py+6, TILE-12, TILE-13, 'rgba(220,247,255,.5)');
     }
 
     function updateHUD(){
@@ -641,8 +685,17 @@
       loadLevel((state.levelIndex + 1) % LEVELS.length);
     };
 
+    function startRenderLoop(){
+      const tick = (now) => {
+        draw(now);
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    }
+
     makeLevelButtons();
     loadLevel(0);
+    startRenderLoop();
   </script>
 </body>
 </html>
