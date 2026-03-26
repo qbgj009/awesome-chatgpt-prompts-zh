@@ -1,0 +1,1023 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+  <title>地牢推箱子 · H5</title>
+  <style>
+    :root {
+      --bg: #1d2330;
+      --panel: #20283a;
+      --gold: #f6c667;
+      --accent: #5ed0ff;
+      --danger: #ff6363;
+      --ok: #79df9b;
+      --tile: 58px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: radial-gradient(circle at 20% 0%, #34435f, var(--bg));
+      color: #eef4ff;
+      font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      padding: 14px;
+      overflow-x: hidden;
+    }
+    h1 {
+      margin: 6px 0 2px;
+      color: #ffe9a7;
+      text-shadow: 0 2px 0 #7a4e1a;
+      font-size: clamp(20px, 3.2vw, 30px);
+      letter-spacing: 1px;
+    }
+    .hud {
+      width: min(96vw, 860px);
+      background: linear-gradient(180deg, #2a3550, #1f2635);
+      border: 2px solid #445273;
+      border-radius: 16px;
+      padding: 10px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      box-shadow: 0 12px 30px rgba(0,0,0,.33);
+    }
+    .stats {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+    .chip {
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: #111826;
+      border: 1px solid #3f4d6d;
+      font-size: 13px;
+      white-space: nowrap;
+    }
+    .buttons { display: flex; flex-wrap: wrap; gap: 8px; justify-content: end; }
+    button {
+      border: 0;
+      border-radius: 10px;
+      padding: 8px 12px;
+      color: #112;
+      cursor: pointer;
+      font-weight: 700;
+      background: linear-gradient(180deg, #ffd985, #f2b85b);
+      box-shadow: 0 3px 0 #9f6a2c;
+    }
+    button.secondary {
+      color: #d8e6ff;
+      background: linear-gradient(180deg, #50658f, #344464);
+      box-shadow: 0 3px 0 #1f2b46;
+    }
+    #levelSelect { display: flex; flex-wrap: wrap; gap: 8px; width: min(96vw, 860px); }
+    #levelSelect button.active { outline: 3px solid var(--accent); }
+
+    .game-wrap {
+      perspective: none;
+      transform-style: flat;
+      width: min(96vw, 860px);
+      display: grid;
+      place-items: center;
+    }
+    #game {
+      touch-action: none;
+      border-radius: 20px;
+      border: 2px solid #556285;
+      box-shadow: 0 20px 50px rgba(0,0,0,.45);
+      background: #1f2a1c;
+      width: min(94vw, 780px);
+      height: auto;
+      transform: none;
+      filter: saturate(1.08) contrast(1.03);
+    }
+    .tips {
+      width: min(96vw, 860px);
+      background: rgba(23,30,43,.8);
+      border: 1px solid #3d4c6f;
+      border-radius: 12px;
+      padding: 10px 12px;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .danger { color: #ff9d9d; }
+    .ok { color: #a4ffc2; }
+    .modal-mask {
+      position: fixed;
+      inset: 0;
+      background: rgba(12,18,28,.65);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 50;
+      backdrop-filter: blur(2px);
+    }
+    .modal-mask.show { display: flex; }
+    .modal {
+      width: min(90vw, 420px);
+      background: linear-gradient(180deg, #2a3652, #1f2738);
+      border: 2px solid #5d7098;
+      border-radius: 16px;
+      box-shadow: 0 18px 40px rgba(0,0,0,.45);
+      padding: 20px;
+      text-align: center;
+    }
+    .modal h2 { margin: 0 0 10px; color: #ffe8a4; }
+    .modal p { margin: 0 0 16px; color: #d8e7ff; }
+  </style>
+</head>
+<body>
+  <h1>🧩 地牢推箱子（3渲2风格）</h1>
+  <div class="hud">
+    <div class="stats">
+      <span class="chip" id="levelInfo">关卡：1</span>
+      <span class="chip" id="boxInfo">箱子：0</span>
+      <span class="chip" id="stepInfo">步数：0</span>
+      <span class="chip" id="goalInfo">完成：0/0</span>
+      <span class="chip" id="propInfo">道具：炸弹0 / 传送0</span>
+      <span class="chip" id="funInfo">宝石：0/0 · 倒计时：0</span>
+      <span class="chip" id="stateInfo">状态：进行中</span>
+    </div>
+    <div class="buttons">
+      <button id="undoBtn" class="secondary">撤销</button>
+      <button id="restartBtn" class="secondary">重开</button>
+      <button id="bombBtn" class="secondary">炸弹</button>
+      <button id="teleportBtn" class="secondary">传送</button>
+      <button id="nextBtn">下一关</button>
+    </div>
+  </div>
+
+  <div id="levelSelect"></div>
+
+  <div class="game-wrap">
+    <canvas id="game" width="780" height="540"></canvas>
+  </div>
+
+  <div class="tips">
+    操作：<b>方向键 / WASD / 触屏滑动</b>。规则：只能推不能拉，一次最多推一个箱子。<br/>
+    <span class="danger">地刺</span>：玩家踩到会失败并重开当前关。<span class="danger">角落警告</span>：若箱子被推入非目标死角将高亮提示。<br/>
+    <span class="ok">道具</span>：按 <b>B</b> 使用炸弹清除相邻箱子；按 <b>T</b> 使用传送随机换位（每关次数有限）。<br/>
+    <span class="ok">趣味机制</span>：收集全部宝石可获得额外评价；小怪会巡逻，碰到即失败；地刺会周期性启闭。<br/>
+    <span class="ok">通关条件</span>：所有箱子都到目标点（绿色符文）上。
+  </div>
+  <div class="modal-mask" id="winModal">
+    <div class="modal">
+      <h2>🎉 恭喜通关！</h2>
+      <p id="winText">你成功完成了本关，准备进入下一关挑战。</p>
+      <button id="confirmNextBtn">确认进入下一关</button>
+    </div>
+  </div>
+  <div class="modal-mask" id="failModal">
+    <div class="modal">
+      <h2>💥 挑战失败</h2>
+      <p id="failText">检测到当前局面无法完成，请重新尝试。</p>
+      <button id="retryBtn">重新尝试</button>
+    </div>
+  </div>
+
+  <script>
+    const TILE = 60;
+    const LIGHT = { x: -0.62, y: -0.45, z: 0.64 };
+    const TYPES = { WALL:'#', FLOOR:'.', GOAL:'G', PLAYER:'P', BOX:'B', SPIKE:'S', DUNGEON:'D', PORTAL:'T', GEM:'C', MONSTER:'M' };
+
+    const LEVELS = [
+      {
+        name: '城堡训练场 · 2箱',
+        bombs: 0,
+        teleports: 0,
+        timeLimit: 90,
+        map: [
+          '###########',
+          '#....G....#',
+          '#..B...B..#',
+          '#....P....#',
+          '#..C...G..#',
+          '#.........#',
+          '###########'
+        ]
+      },
+      {
+        name: '要塞长廊 · 3箱',
+        bombs: 1,
+        teleports: 0,
+        timeLimit: 120,
+        map: [
+          '############',
+          '#..G....G..#',
+          '#..B.##.B..#',
+          '#..C....C..#',
+          '#..B....G..#',
+          '#....P..M..#',
+          '#.....S....#',
+          '############'
+        ]
+      },
+      {
+        name: '地牢棋局 · 4箱',
+        bombs: 1,
+        teleports: 1,
+        timeLimit: 145,
+        map: [
+          '#############',
+          '#G...#...G..#',
+          '#B.B.#.B.B..#',
+          '#....#..C...#',
+          '#..##S##....#',
+          '#...TP.T....#',
+          '#....#..M...#',
+          '#..G.#...G..#',
+          '#############'
+        ]
+      },
+      {
+        name: '王城双桥 · 5箱',
+        bombs: 1,
+        teleports: 1,
+        timeLimit: 170,
+        map: [
+          '##############',
+          '#G..#....#..G#',
+          '#B.B#....#.B.#',
+          '#...#S.C.#...#',
+          '#..M######...#',
+          '#..B..P......#',
+          '#...T....T...#',
+          '#..G#....#G..#',
+          '#...#....#...#',
+          '##############'
+        ]
+      },
+      {
+        name: '皇室终局 · 6箱',
+        bombs: 2,
+        teleports: 1,
+        timeLimit: 200,
+        map: [
+          '###############',
+          '#G..#.....#..G#',
+          '#B.B#.S.S.#B.B#',
+          '#...#..M..#...#',
+          '#..T###.###T..#',
+          '#..B...P...B..#',
+          '#...#..C..#...#',
+          '#G..#.....#..G#',
+          '#...#..C..#...#',
+          '#..G.......G..#',
+          '###############'
+        ]
+      }
+    ];
+
+    const state = {
+      levelIndex: 0,
+      grid: [],
+      goals: new Set(),
+      spikes: new Set(),
+      dungeons: new Set(),
+      portals: [],
+      gems: new Set(),
+      monsters: [],
+      fixedBoxes: new Set(),
+      boxes: new Set(),
+      player: {x:0,y:0},
+      steps: 0,
+      bombs: 0,
+      teleports: 0,
+      history: [],
+      failed: false,
+      deadlockedBoxes: new Set(),
+      lastDir: {x:0,y:1},
+      message: '状态：进行中',
+      animTime: 0,
+      collectedGems: 0,
+      timeLeft: 0,
+      lastTick: 0,
+      monsterTimer: 0,
+      winModalShown: false,
+      failModalShown: false,
+      confetti: [],
+    };
+
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    const info = {
+      level: document.getElementById('levelInfo'),
+      box: document.getElementById('boxInfo'),
+      step: document.getElementById('stepInfo'),
+      goal: document.getElementById('goalInfo'),
+      prop: document.getElementById('propInfo'),
+      fun: document.getElementById('funInfo'),
+      state: document.getElementById('stateInfo'),
+    };
+    const winModal = document.getElementById('winModal');
+    const winText = document.getElementById('winText');
+    const failModal = document.getElementById('failModal');
+    const failText = document.getElementById('failText');
+
+    function toKey(x,y){ return `${x},${y}`; }
+    function fromKey(k){ const [x,y]=k.split(',').map(Number); return {x,y}; }
+
+    function loadLevel(index) {
+      state.levelIndex = index;
+      state.grid = [];
+      state.goals.clear(); state.spikes.clear(); state.dungeons.clear(); state.boxes.clear(); state.portals = [];
+      state.gems.clear(); state.monsters = [];
+      state.fixedBoxes.clear();
+      state.confetti = [];
+      state.steps = 0; state.history = []; state.failed = false;
+      state.bombs = LEVELS[index].bombs || 0;
+      state.teleports = LEVELS[index].teleports || 0;
+      state.message = '状态：进行中';
+      state.collectedGems = 0;
+      state.timeLeft = LEVELS[index].timeLimit || 120;
+      state.lastTick = performance.now();
+      state.monsterTimer = 0;
+      state.winModalShown = false;
+      state.failModalShown = false;
+      winModal.classList.remove('show');
+      failModal.classList.remove('show');
+
+      const rows = LEVELS[index].map;
+      const h = rows.length;
+      const w = rows[0].length;
+      canvas.width = w * TILE;
+      canvas.height = h * TILE;
+
+      rows.forEach((row, y) => {
+        state.grid[y] = [];
+        [...row].forEach((ch, x) => {
+          let ground = TYPES.FLOOR;
+          if (ch === TYPES.WALL) ground = TYPES.WALL;
+          if (ch === TYPES.GOAL) state.goals.add(toKey(x,y));
+          if (ch === TYPES.SPIKE) state.spikes.add(toKey(x,y));
+          if (ch === TYPES.DUNGEON) state.dungeons.add(toKey(x,y));
+          if (ch === TYPES.PORTAL) state.portals.push({x,y});
+          if (ch === TYPES.GEM) state.gems.add(toKey(x,y));
+          if (ch === TYPES.MONSTER) state.monsters.push({x,y,dir:1,axis:(x+y)%2===0?'x':'y'});
+          if (ch === TYPES.BOX) state.boxes.add(toKey(x,y));
+          if (ch === TYPES.PLAYER) state.player = {x,y};
+          state.grid[y][x] = ground;
+        });
+      });
+
+      computeDeadlocks();
+      refreshLevelButtons();
+      updateHUD();
+      draw();
+    }
+
+    function pushHistory(){
+      state.history.push({
+        player: {...state.player},
+        boxes: new Set([...state.boxes]),
+        steps: state.steps,
+        failed: state.failed,
+        bombs: state.bombs,
+        teleports: state.teleports,
+        message: state.message,
+        collectedGems: state.collectedGems,
+        gems: new Set([...state.gems]),
+        monsters: state.monsters.map(m => ({...m})),
+        fixedBoxes: new Set([...state.fixedBoxes]),
+        timeLeft: state.timeLeft,
+      });
+      if (state.history.length > 80) state.history.shift();
+    }
+
+    function restore(snapshot){
+      state.player = {...snapshot.player};
+      state.boxes = new Set([...snapshot.boxes]);
+      state.steps = snapshot.steps;
+      state.failed = snapshot.failed;
+      state.bombs = snapshot.bombs;
+      state.teleports = snapshot.teleports;
+      state.message = snapshot.message;
+      state.collectedGems = snapshot.collectedGems;
+      state.gems = new Set([...snapshot.gems]);
+      state.monsters = snapshot.monsters.map(m => ({...m}));
+      state.fixedBoxes = new Set([...snapshot.fixedBoxes]);
+      state.timeLeft = snapshot.timeLeft;
+      computeDeadlocks();
+      updateHUD();
+      draw();
+    }
+
+    function isWall(x,y){
+      return y < 0 || y >= state.grid.length || x < 0 || x >= state.grid[0].length || state.grid[y][x] === TYPES.WALL;
+    }
+    function hasBox(x,y){ return state.boxes.has(toKey(x,y)); }
+    function isSpikeActive(timeMs = state.animTime){
+      return Math.floor(timeMs / 900) % 2 === 0;
+    }
+
+    function collectGemAt(x, y){
+      const k = toKey(x,y);
+      if (state.gems.has(k)) {
+        state.gems.delete(k);
+        state.collectedGems++;
+        state.message = '状态：收集到宝石 ✨';
+      }
+    }
+
+    function move(dx,dy){
+      if (state.failed || isWin() || state.winModalShown) return;
+      state.lastDir = {x:dx,y:dy};
+      let movedBox = false;
+      const nx = state.player.x + dx;
+      const ny = state.player.y + dy;
+      if (isWall(nx,ny)) return;
+
+      const destKey = toKey(nx,ny);
+      if (hasBox(nx,ny)) {
+        if (state.fixedBoxes.has(destKey)) return;
+        const bx = nx + dx, by = ny + dy;
+        if (isWall(bx,by) || hasBox(bx,by)) return; // 一次仅推一个
+        pushHistory();
+        movedBox = true;
+        state.boxes.delete(destKey);
+        state.fixedBoxes.delete(destKey);
+        state.boxes.add(toKey(bx,by));
+        const newBoxKey = toKey(bx,by);
+        if (state.goals.has(newBoxKey)) {
+          state.fixedBoxes.add(newBoxKey);
+          state.message = '状态：箱子入城堡，固定成功！';
+          spawnConfetti(bx, by);
+        } else {
+          state.message = '状态：进行中';
+        }
+        state.player = {x:nx,y:ny};
+        state.steps++;
+      } else {
+        pushHistory();
+        state.player = {x:nx,y:ny};
+        state.steps++;
+        state.message = '状态：进行中';
+      }
+
+      tryPortal();
+      collectGemAt(state.player.x, state.player.y);
+
+      if (state.spikes.has(toKey(state.player.x,state.player.y)) && isSpikeActive()) {
+        showFailModal('踩中激活地刺，挑战失败！请重新尝试。');
+      }
+
+      checkMonsterCollision();
+      computeDeadlocks();
+      if (movedBox && checkUnsolvableState()) return;
+      updateHUD();
+      draw();
+      if (isWin()) {
+        state.message = '状态：通关成功 🎉';
+        updateHUD();
+        showWinModal();
+      }
+    }
+
+    function tryPortal(){
+      const here = toKey(state.player.x, state.player.y);
+      if (state.portals.length < 2) return;
+      const idx = state.portals.findIndex(p => toKey(p.x,p.y) === here);
+      if (idx === -1) return;
+      const target = state.portals[(idx + 1) % state.portals.length];
+      if (!hasBox(target.x, target.y)) {
+        state.player = {x: target.x, y: target.y};
+        state.message = '状态：进入传送门！';
+      }
+    }
+
+    function checkMonsterCollision(){
+      for (const m of state.monsters) {
+        if (m.x === state.player.x && m.y === state.player.y) {
+          showFailModal('你被巡逻怪物抓住了，挑战失败！请重新尝试。');
+          return true;
+        }
+      }
+      return false;
+    }
+
+    function showWinModal(){
+      if (state.winModalShown) return;
+      state.winModalShown = true;
+      winText.textContent = `你完成了 ${LEVELS[state.levelIndex].name}，步数 ${state.steps}，准备进入下一关！`;
+      winModal.classList.add('show');
+    }
+
+    function showFailModal(msg){
+      if (state.failModalShown) return;
+      state.failModalShown = true;
+      state.failed = true;
+      state.message = '状态：挑战失败';
+      failText.textContent = msg || '检测到当前局面无法完成，请重新尝试。';
+      failModal.classList.add('show');
+      updateHUD();
+    }
+
+    function isBoxDoomed(x, y){
+      if (state.goals.has(toKey(x,y))) return false;
+      const visited = new Set();
+      const queue = [];
+      for (const g of state.goals) {
+        if (state.fixedBoxes.has(g)) continue;
+        const {x:gx,y:gy} = fromKey(g);
+        queue.push([gx,gy]);
+        visited.add(g);
+      }
+      if (!queue.length) return true;
+      const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+      while (queue.length) {
+        const [cx, cy] = queue.shift();
+        if (cx === x && cy === y) return false;
+        for (const [dx,dy] of dirs) {
+          const px = cx - dx, py = cy - dy; // previous box cell
+          const supportX = cx + dx, supportY = cy + dy; // pusher support cell
+          const key = toKey(px,py);
+          if (visited.has(key)) continue;
+          if (isWall(px,py) || isWall(supportX,supportY)) continue;
+          if (state.fixedBoxes.has(key)) continue;
+          visited.add(key);
+          queue.push([px,py]);
+        }
+      }
+      return true;
+    }
+
+    function checkUnsolvableState(){
+      if (state.failed || state.winModalShown) return false;
+      for (const k of state.boxes) {
+        if (state.fixedBoxes.has(k)) continue;
+        const {x,y} = fromKey(k);
+        if (isBoxDoomed(x,y)) {
+          showFailModal('检测到有箱子已无法抵达城堡目标点，挑战失败！');
+          return true;
+        }
+      }
+      return false;
+    }
+
+    function updateDynamic(dtMs){
+      if (state.winModalShown || state.failModalShown) return;
+      for (const p of state.confetti) {
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vy += 0.14;
+        p.life -= 1;
+      }
+      state.confetti = state.confetti.filter(p => p.life > 0);
+      if (state.failed || isWin()) return;
+      state.timeLeft = Math.max(0, state.timeLeft - dtMs / 1000);
+      if (state.timeLeft <= 0) {
+        showFailModal('时间耗尽，挑战失败！请重新尝试。');
+        return;
+      }
+
+      state.monsterTimer += dtMs;
+      if (state.monsterTimer < 320) return;
+      state.monsterTimer = 0;
+      for (const m of state.monsters) {
+        const stepX = m.axis === 'x' ? m.dir : 0;
+        const stepY = m.axis === 'y' ? m.dir : 0;
+        const nx = m.x + stepX;
+        const ny = m.y + stepY;
+        if (isWall(nx,ny) || hasBox(nx,ny)) {
+          m.dir *= -1;
+          continue;
+        }
+        m.x = nx; m.y = ny;
+      }
+      checkMonsterCollision();
+      updateHUD();
+    }
+
+    function isCornerBlocked(x,y){
+      const up = isWall(x, y-1) || hasBox(x, y-1);
+      const down = isWall(x, y+1) || hasBox(x, y+1);
+      const left = isWall(x-1, y) || hasBox(x-1, y);
+      const right = isWall(x+1, y) || hasBox(x+1, y);
+      return (up && left) || (up && right) || (down && left) || (down && right);
+    }
+
+    function computeDeadlocks(){
+      state.deadlockedBoxes.clear();
+      for (const k of state.boxes) {
+        if (state.goals.has(k)) continue;
+        const {x,y} = fromKey(k);
+        if (isCornerBlocked(x,y)) state.deadlockedBoxes.add(k);
+      }
+    }
+
+    function isWin(){
+      for (const g of state.goals) if (!state.boxes.has(g)) return false;
+      return true;
+    }
+
+    function drawTile3D(x,y,colorTop,colorSide){
+      const px = x*TILE, py = y*TILE;
+      ctx.fillStyle = colorSide;
+      ctx.fillRect(px, py+6, TILE, TILE-6);
+      ctx.fillStyle = colorTop;
+      ctx.fillRect(px+2, py, TILE-4, TILE-8);
+      ctx.strokeStyle = 'rgba(0,0,0,.18)';
+      ctx.strokeRect(px+2, py, TILE-4, TILE-8);
+    }
+
+    function calcTileLight(x, y){
+      const nx = ((Math.sin(x * 1.9 + y * 0.7) + 1) * 0.5 - 0.5) * 0.55;
+      const ny = ((Math.cos(x * 0.9 - y * 1.4) + 1) * 0.5 - 0.5) * 0.55;
+      const nz = Math.sqrt(Math.max(0.2, 1 - nx*nx - ny*ny));
+      return Math.max(0.25, nx * LIGHT.x + ny * LIGHT.y + nz * LIGHT.z);
+    }
+
+    function drawOutlineRect(px, py, w, h, color){
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(px, py, w, h);
+      ctx.lineWidth = 1;
+    }
+
+    function spawnConfetti(x, y){
+      const colors = ['#ff5a6d','#ffd24f','#6df7a7','#66d0ff','#ffffff'];
+      for (let i=0;i<26;i++) {
+        state.confetti.push({
+          x: x*TILE + TILE/2,
+          y: y*TILE + TILE/2,
+          vx: (Math.random()-0.5)*5,
+          vy: -2 - Math.random()*4,
+          life: 42 + Math.random()*25,
+          color: colors[i%colors.length],
+        });
+      }
+    }
+
+    function draw(time = performance.now()){
+      state.animTime = time;
+      const t = time * 0.001;
+      const idleBob = Math.sin(t * 3.2) * 2.2;
+      const glow = (Math.sin(t * 2.1) + 1) * 0.5;
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+
+      for (let y=0; y<state.grid.length; y++) {
+        for (let x=0; x<state.grid[0].length; x++) {
+          const key = toKey(x,y);
+          const px=x*TILE, py=y*TILE;
+          if (state.grid[y][x] === TYPES.WALL) {
+            drawTile3D(x,y,'#9ca9bc','#6d788d');
+            continue;
+          }
+
+          // grass-like floor
+          const light = calcTileLight(x, y);
+          const grd = ctx.createLinearGradient(px,py,px,py+TILE);
+          grd.addColorStop(0,`hsl(${116 + light * 8} 57% ${54 + light * 7}%)`);
+          grd.addColorStop(1,`hsl(${112 + light * 5} 49% ${38 + light * 6}%)`);
+          ctx.fillStyle = grd;
+          ctx.fillRect(px, py, TILE, TILE);
+
+          // checker highlight for pseudo 3D
+          if ((x+y)%2===0){
+            ctx.fillStyle='rgba(255,255,255,.08)';
+            ctx.fillRect(px,py,TILE,TILE);
+          }
+
+          if (state.dungeons.has(key)) {
+            ctx.fillStyle = '#1a1f28';
+            ctx.fillRect(px+8,py+8,TILE-16,TILE-16);
+            ctx.strokeStyle = '#6d7481';
+            for(let i=0;i<4;i++){
+              const gx=px+12+i*10;
+              ctx.beginPath();
+              ctx.moveTo(gx,py+8);
+              ctx.lineTo(gx,py+TILE-8);
+              ctx.stroke();
+            }
+            ctx.fillStyle = '#7bff67';
+            ctx.beginPath();
+            ctx.arc(px+TILE/2, py+TILE/2, 9, 0, Math.PI*2);
+            ctx.fill();
+            ctx.fillStyle='#fff';
+            ctx.beginPath();ctx.arc(px+TILE/2-4,py+TILE/2-2,2,0,Math.PI*2);ctx.fill();
+            ctx.beginPath();ctx.arc(px+TILE/2+4,py+TILE/2-2,2,0,Math.PI*2);ctx.fill();
+          }
+
+          if (state.portals.some(p => p.x === x && p.y === y)) {
+            ctx.strokeStyle = '#7f7bff';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.arc(px+TILE/2, py+TILE/2, 14, 0, Math.PI*2);
+            ctx.stroke();
+            ctx.strokeStyle = `rgba(181,175,255,${0.35 + glow * 0.35})`;
+            ctx.beginPath();
+            ctx.arc(px+TILE/2, py+TILE/2, 9, 0, Math.PI*2);
+            ctx.stroke();
+            ctx.lineWidth = 1;
+          }
+
+          if (state.gems.has(key)) {
+            ctx.fillStyle = '#8ee7ff';
+            ctx.beginPath();
+            ctx.moveTo(px+TILE/2, py+12);
+            ctx.lineTo(px+TILE/2+11, py+TILE/2);
+            ctx.lineTo(px+TILE/2, py+TILE-12);
+            ctx.lineTo(px+TILE/2-11, py+TILE/2);
+            ctx.closePath();
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(255,255,255,.7)';
+            ctx.stroke();
+          }
+
+          if (state.spikes.has(key)) {
+            const active = isSpikeActive(time);
+            ctx.fillStyle = active ? '#7c7f90' : '#4e5260';
+            for (let i=0;i<3;i++) {
+              ctx.beginPath();
+              ctx.moveTo(px+8+i*16, py+TILE-8);
+              ctx.lineTo(px+16+i*16, py+(active?10:26));
+              ctx.lineTo(px+24+i*16, py+TILE-8);
+              ctx.closePath();
+              ctx.fill();
+            }
+          }
+
+          if (state.goals.has(key)) {
+            // Castle goal marker + red flag
+            ctx.fillStyle = '#adb9cf';
+            ctx.fillRect(px+17, py+24, 26, 18);
+            ctx.fillStyle = '#c9d4e7';
+            ctx.fillRect(px+14, py+20, 8, 22);
+            ctx.fillRect(px+38, py+20, 8, 22);
+            ctx.fillStyle = '#6f7d96';
+            ctx.fillRect(px+27, py+30, 6, 12);
+            ctx.strokeStyle = 'rgba(255,255,255,.38)';
+            ctx.strokeRect(px+17, py+24, 26, 18);
+            ctx.strokeStyle = '#6d7484';
+            ctx.beginPath();
+            ctx.moveTo(px+30, py+12);
+            ctx.lineTo(px+30, py+26);
+            ctx.stroke();
+            ctx.fillStyle = '#ff4d5a';
+            ctx.beginPath();
+            ctx.moveTo(px+30, py+12);
+            ctx.lineTo(px+44, py+16);
+            ctx.lineTo(px+30, py+20);
+            ctx.closePath();
+            ctx.fill();
+          }
+        }
+      }
+
+      // Shadow layer (3D2 style grounding)
+      for (const k of state.boxes) {
+        const {x,y}=fromKey(k); const px=x*TILE, py=y*TILE;
+        ctx.fillStyle = 'rgba(0,0,0,.23)';
+        ctx.beginPath();
+        ctx.ellipse(px+TILE/2+4, py+TILE-7, 16, 8, -0.2, 0, Math.PI*2);
+        ctx.fill();
+      }
+      ctx.fillStyle = 'rgba(0,0,0,.25)';
+      ctx.beginPath();
+      ctx.ellipse(state.player.x*TILE+TILE/2+5, state.player.y*TILE+TILE-7, 14, 8, -0.25, 0, Math.PI*2);
+      ctx.fill();
+
+      for (const k of state.boxes) {
+        const {x,y}=fromKey(k); const px=x*TILE, py=y*TILE;
+        drawTile3D(x,y,'#e8b963','#b37d35');
+        ctx.fillStyle = 'rgba(120,70,24,.45)';
+        ctx.fillRect(px+8,py+10,TILE-16,TILE-20);
+        ctx.strokeStyle = '#6b481d';
+        ctx.beginPath(); ctx.moveTo(px+8,py+10); ctx.lineTo(px+TILE-8,py+TILE-10); ctx.stroke();
+        drawOutlineRect(px+5, py+5, TILE-10, TILE-12, 'rgba(255,238,180,.55)');
+
+        if (state.deadlockedBoxes.has(k)) {
+          ctx.strokeStyle = '#ff4e4e';
+          ctx.lineWidth = 3;
+          ctx.strokeRect(px+3,py+3,TILE-6,TILE-6);
+          ctx.lineWidth = 1;
+        }
+        if (state.fixedBoxes.has(k)) {
+          ctx.fillStyle = '#ffd84f';
+          ctx.beginPath();
+          ctx.moveTo(px+TILE/2, py+14);
+          ctx.lineTo(px+TILE/2+7, py+22);
+          ctx.lineTo(px+TILE/2, py+30);
+          ctx.lineTo(px+TILE/2-7, py+22);
+          ctx.closePath();
+          ctx.fill();
+        }
+      }
+
+      const p = state.player;
+      const px=p.x*TILE, py=p.y*TILE;
+      drawTile3D(p.x,p.y,'#5ed0ff','#2f8faf');
+      ctx.fillStyle = `rgba(255,255,255,${0.14 + glow * 0.14})`;
+      ctx.fillRect(px+4, py+4, TILE-10, 9);
+      ctx.fillStyle='#e9faff';
+      ctx.beginPath(); ctx.arc(px+TILE/2,py+20+idleBob,9,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle='#17394f';
+      ctx.beginPath(); ctx.arc(px+TILE/2-3,py+19+idleBob,1.5,0,Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(px+TILE/2+3,py+19+idleBob,1.5,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle='#1f4e69';
+      ctx.fillRect(px+20,py+30+idleBob,20,14);
+      drawOutlineRect(px+6, py+6, TILE-12, TILE-13, 'rgba(220,247,255,.5)');
+
+      for (const m of state.monsters) {
+        const mx = m.x * TILE, my = m.y * TILE;
+        ctx.fillStyle = 'rgba(0,0,0,.26)';
+        ctx.beginPath(); ctx.ellipse(mx+TILE/2+4,my+TILE-8,15,8,-0.2,0,Math.PI*2); ctx.fill();
+        drawTile3D(m.x,m.y,'#ff8b71','#b9543b');
+        ctx.fillStyle='#fff3dd';
+        ctx.beginPath(); ctx.arc(mx+TILE/2,my+20,8,0,Math.PI*2); ctx.fill();
+        ctx.fillStyle='#4a2018';
+        ctx.beginPath(); ctx.arc(mx+TILE/2-3,my+20,1.4,0,Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.arc(mx+TILE/2+3,my+20,1.4,0,Math.PI*2); ctx.fill();
+      }
+
+      // Success feedback: bigger red flags on fixed castle goals
+      for (const k of state.fixedBoxes) {
+        if (!state.goals.has(k)) continue;
+        const {x,y} = fromKey(k);
+        const gx = x*TILE, gy = y*TILE;
+        const pulse = 1 + Math.sin(t * 6) * 0.08;
+        ctx.strokeStyle = '#7a8497';
+        ctx.beginPath();
+        ctx.moveTo(gx+44, gy+8);
+        ctx.lineTo(gx+44, gy+34);
+        ctx.stroke();
+        ctx.fillStyle = '#ff2e43';
+        ctx.beginPath();
+        ctx.moveTo(gx+44, gy+8);
+        ctx.lineTo(gx+44 + 15*pulse, gy+12);
+        ctx.lineTo(gx+44, gy+16);
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      for (const p of state.confetti) {
+        ctx.fillStyle = p.color;
+        ctx.fillRect(p.x, p.y, 4, 4);
+      }
+    }
+
+    function updateHUD(){
+      const totalBoxes = state.boxes.size;
+      let done = 0;
+      for (const g of state.goals) if (state.boxes.has(g)) done++;
+      info.level.textContent = `关卡：${state.levelIndex+1} · ${LEVELS[state.levelIndex].name}`;
+      info.box.textContent = `箱子：${totalBoxes}`;
+      info.step.textContent = `步数：${state.steps}`;
+      info.goal.textContent = `完成：${done}/${state.goals.size}`;
+      info.prop.textContent = `道具：炸弹${state.bombs} / 传送${state.teleports}`;
+      info.fun.textContent = `宝石：${state.collectedGems}/${state.collectedGems + state.gems.size} · 倒计时：${Math.ceil(state.timeLeft)}`;
+      if (!state.failed && state.message === '状态：进行中' && state.deadlockedBoxes.size) state.message = '状态：警告，箱子可能卡死';
+      if (isWin()) state.message = state.gems.size === 0 ? '状态：完美通关（宝石全收集）🏆' : '状态：通关成功 🎉';
+      info.state.textContent = state.message;
+    }
+
+    function useBomb(){
+      if (state.bombs <= 0 || state.failed || isWin() || state.winModalShown) return;
+      const dirs = [state.lastDir, {x:1,y:0}, {x:-1,y:0}, {x:0,y:1}, {x:0,y:-1}];
+      let target = null;
+      for (const d of dirs) {
+        const x = state.player.x + d.x;
+        const y = state.player.y + d.y;
+        const k = toKey(x,y);
+        if (state.deadlockedBoxes.has(k)) { target = k; break; }
+      }
+      if (!target) {
+        for (const d of dirs) {
+          const x = state.player.x + d.x;
+          const y = state.player.y + d.y;
+          const k = toKey(x,y);
+          if (state.boxes.has(k) && !state.goals.has(k)) { target = k; break; }
+        }
+      }
+      if (!target) {
+        state.message = '状态：附近没有可炸箱子';
+        updateHUD();
+        return;
+      }
+      pushHistory();
+      state.boxes.delete(target);
+      state.fixedBoxes.delete(target);
+      state.bombs--;
+      state.message = '状态：炸弹生效，清除了一个箱子';
+      computeDeadlocks();
+      if (checkUnsolvableState()) return;
+      updateHUD();
+      draw();
+    }
+
+    function useTeleport(){
+      if (state.teleports <= 0 || state.failed || isWin() || state.winModalShown) return;
+      const cells = [];
+      for (let y=0; y<state.grid.length; y++) {
+        for (let x=0; x<state.grid[0].length; x++) {
+          if (isWall(x,y) || hasBox(x,y) || state.spikes.has(toKey(x,y))) continue;
+          if (x === state.player.x && y === state.player.y) continue;
+          cells.push({x,y});
+        }
+      }
+      if (!cells.length) return;
+      pushHistory();
+      const target = cells[Math.floor(Math.random() * cells.length)];
+      state.player = target;
+      state.teleports--;
+      state.message = '状态：传送成功';
+      collectGemAt(state.player.x, state.player.y);
+      checkMonsterCollision();
+      computeDeadlocks();
+      updateHUD();
+      draw();
+    }
+
+    function makeLevelButtons(){
+      const wrap = document.getElementById('levelSelect');
+      wrap.innerHTML = '';
+      LEVELS.forEach((lv,idx)=>{
+        const boxCount = lv.map.join('').split(TYPES.BOX).length - 1;
+        const btn = document.createElement('button');
+        btn.className = 'secondary';
+        btn.textContent = `等级${idx+1}（${boxCount}箱）`;
+        btn.onclick = () => loadLevel(idx);
+        btn.dataset.level = idx;
+        wrap.appendChild(btn);
+      });
+      refreshLevelButtons();
+    }
+
+    function refreshLevelButtons(){
+      document.querySelectorAll('#levelSelect button').forEach(btn=>{
+        btn.classList.toggle('active', Number(btn.dataset.level) === state.levelIndex);
+      });
+    }
+
+    document.addEventListener('keydown', (e)=>{
+      const k = e.key.toLowerCase();
+      if (["arrowup","w"].includes(k)) move(0,-1);
+      else if (["arrowdown","s"].includes(k)) move(0,1);
+      else if (["arrowleft","a"].includes(k)) move(-1,0);
+      else if (["arrowright","d"].includes(k)) move(1,0);
+      else if (k === 'b') useBomb();
+      else if (k === 't') useTeleport();
+    });
+
+    let touchStart = null;
+    canvas.addEventListener('touchstart', e => {
+      const t = e.changedTouches[0];
+      touchStart = {x:t.clientX, y:t.clientY};
+    }, {passive:true});
+
+    canvas.addEventListener('touchend', e => {
+      if (!touchStart) return;
+      const t = e.changedTouches[0];
+      const dx = t.clientX - touchStart.x;
+      const dy = t.clientY - touchStart.y;
+      const absX = Math.abs(dx), absY = Math.abs(dy);
+      const threshold = 24;
+      if (Math.max(absX,absY) < threshold) return;
+      if (absX > absY) move(dx > 0 ? 1 : -1, 0);
+      else move(0, dy > 0 ? 1 : -1);
+      touchStart = null;
+    }, {passive:true});
+
+    document.getElementById('restartBtn').onclick = () => loadLevel(state.levelIndex);
+    document.getElementById('undoBtn').onclick = () => {
+      const s = state.history.pop();
+      if (s) restore(s);
+    };
+    document.getElementById('bombBtn').onclick = () => useBomb();
+    document.getElementById('teleportBtn').onclick = () => useTeleport();
+    document.getElementById('nextBtn').onclick = () => {
+      loadLevel((state.levelIndex + 1) % LEVELS.length);
+    };
+    document.getElementById('confirmNextBtn').onclick = () => {
+      winModal.classList.remove('show');
+      loadLevel((state.levelIndex + 1) % LEVELS.length);
+    };
+    document.getElementById('retryBtn').onclick = () => {
+      failModal.classList.remove('show');
+      loadLevel(state.levelIndex);
+    };
+
+    function startRenderLoop(){
+      const tick = (now) => {
+        if (!state.lastTick) state.lastTick = now;
+        const dt = Math.min(60, now - state.lastTick);
+        state.lastTick = now;
+        updateDynamic(dt);
+        draw(now);
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    }
+
+    makeLevelButtons();
+    loadLevel(0);
+    startRenderLoop();
+  </script>
+</body>
+</html>
