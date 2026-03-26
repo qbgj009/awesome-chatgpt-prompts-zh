@@ -173,6 +173,13 @@
       <button id="confirmNextBtn">确认进入下一关</button>
     </div>
   </div>
+  <div class="modal-mask" id="failModal">
+    <div class="modal">
+      <h2>💥 挑战失败</h2>
+      <p id="failText">检测到当前局面无法完成，请重新尝试。</p>
+      <button id="retryBtn">重新尝试</button>
+    </div>
+  </div>
 
   <script>
     const TILE = 60;
@@ -202,10 +209,10 @@
         timeLimit: 120,
         map: [
           '############',
-          '#..G..#..G.#',
+          '#..G.....G.#',
           '#..B..#..B.#',
           '#..C..#..C.#',
-          '#..B..#..G.#',
+          '#..B.....G.#',
           '#..P..#..M.#',
           '#.....S....#',
           '############'
@@ -274,6 +281,7 @@
       portals: [],
       gems: new Set(),
       monsters: [],
+      fixedBoxes: new Set(),
       boxes: new Set(),
       player: {x:0,y:0},
       steps: 0,
@@ -290,6 +298,8 @@
       lastTick: 0,
       monsterTimer: 0,
       winModalShown: false,
+      failModalShown: false,
+      confetti: [],
     };
 
     const canvas = document.getElementById('game');
@@ -305,6 +315,8 @@
     };
     const winModal = document.getElementById('winModal');
     const winText = document.getElementById('winText');
+    const failModal = document.getElementById('failModal');
+    const failText = document.getElementById('failText');
 
     function toKey(x,y){ return `${x},${y}`; }
     function fromKey(k){ const [x,y]=k.split(',').map(Number); return {x,y}; }
@@ -314,6 +326,8 @@
       state.grid = [];
       state.goals.clear(); state.spikes.clear(); state.dungeons.clear(); state.boxes.clear(); state.portals = [];
       state.gems.clear(); state.monsters = [];
+      state.fixedBoxes.clear();
+      state.confetti = [];
       state.steps = 0; state.history = []; state.failed = false;
       state.bombs = LEVELS[index].bombs || 0;
       state.teleports = LEVELS[index].teleports || 0;
@@ -323,7 +337,9 @@
       state.lastTick = performance.now();
       state.monsterTimer = 0;
       state.winModalShown = false;
+      state.failModalShown = false;
       winModal.classList.remove('show');
+      failModal.classList.remove('show');
 
       const rows = LEVELS[index].map;
       const h = rows.length;
@@ -366,6 +382,7 @@
         collectedGems: state.collectedGems,
         gems: new Set([...state.gems]),
         monsters: state.monsters.map(m => ({...m})),
+        fixedBoxes: new Set([...state.fixedBoxes]),
         timeLeft: state.timeLeft,
       });
       if (state.history.length > 80) state.history.shift();
@@ -382,6 +399,7 @@
       state.collectedGems = snapshot.collectedGems;
       state.gems = new Set([...snapshot.gems]);
       state.monsters = snapshot.monsters.map(m => ({...m}));
+      state.fixedBoxes = new Set([...snapshot.fixedBoxes]);
       state.timeLeft = snapshot.timeLeft;
       computeDeadlocks();
       updateHUD();
@@ -414,14 +432,23 @@
 
       const destKey = toKey(nx,ny);
       if (hasBox(nx,ny)) {
+        if (state.fixedBoxes.has(destKey)) return;
         const bx = nx + dx, by = ny + dy;
         if (isWall(bx,by) || hasBox(bx,by)) return; // 一次仅推一个
         pushHistory();
         state.boxes.delete(destKey);
+        state.fixedBoxes.delete(destKey);
         state.boxes.add(toKey(bx,by));
+        const newBoxKey = toKey(bx,by);
+        if (state.goals.has(newBoxKey)) {
+          state.fixedBoxes.add(newBoxKey);
+          state.message = '状态：箱子入城堡，固定成功！';
+          spawnConfetti(bx, by);
+        } else {
+          state.message = '状态：进行中';
+        }
         state.player = {x:nx,y:ny};
         state.steps++;
-        state.message = '状态：进行中';
       } else {
         pushHistory();
         state.player = {x:nx,y:ny};
@@ -433,13 +460,12 @@
       collectGemAt(state.player.x, state.player.y);
 
       if (state.spikes.has(toKey(state.player.x,state.player.y)) && isSpikeActive()) {
-        state.failed = true;
-        state.message = '状态：踩中激活地刺，失败！';
-        setTimeout(() => loadLevel(state.levelIndex), 700);
+        showFailModal('踩中激活地刺，挑战失败！请重新尝试。');
       }
 
       checkMonsterCollision();
       computeDeadlocks();
+      if (checkUnsolvableState()) return;
       updateHUD();
       draw();
       if (isWin()) {
@@ -464,9 +490,7 @@
     function checkMonsterCollision(){
       for (const m of state.monsters) {
         if (m.x === state.player.x && m.y === state.player.y) {
-          state.failed = true;
-          state.message = '状态：被巡逻怪物抓住，失败！';
-          setTimeout(() => loadLevel(state.levelIndex), 700);
+          showFailModal('你被巡逻怪物抓住了，挑战失败！请重新尝试。');
           return true;
         }
       }
@@ -480,13 +504,69 @@
       winModal.classList.add('show');
     }
 
+    function showFailModal(msg){
+      if (state.failModalShown) return;
+      state.failModalShown = true;
+      state.failed = true;
+      state.message = '状态：挑战失败';
+      failText.textContent = msg || '检测到当前局面无法完成，请重新尝试。';
+      failModal.classList.add('show');
+      updateHUD();
+    }
+
+    function isBoxDoomed(x, y){
+      if (state.goals.has(toKey(x,y))) return false;
+      const visited = new Set();
+      const queue = [];
+      for (const g of state.goals) {
+        const {x:gx,y:gy} = fromKey(g);
+        queue.push([gx,gy]);
+        visited.add(g);
+      }
+      const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+      while (queue.length) {
+        const [cx, cy] = queue.shift();
+        if (cx === x && cy === y) return false;
+        for (const [dx,dy] of dirs) {
+          const px = cx - dx, py = cy - dy; // previous box cell
+          const supportX = cx + dx, supportY = cy + dy; // pusher support cell
+          const key = toKey(px,py);
+          if (visited.has(key)) continue;
+          if (isWall(px,py) || isWall(supportX,supportY)) continue;
+          if (state.fixedBoxes.has(key)) continue;
+          visited.add(key);
+          queue.push([px,py]);
+        }
+      }
+      return true;
+    }
+
+    function checkUnsolvableState(){
+      if (state.failed || state.winModalShown) return false;
+      for (const k of state.boxes) {
+        if (state.fixedBoxes.has(k)) continue;
+        const {x,y} = fromKey(k);
+        if (isBoxDoomed(x,y)) {
+          showFailModal('检测到有箱子已无法抵达城堡目标点，挑战失败！');
+          return true;
+        }
+      }
+      return false;
+    }
+
     function updateDynamic(dtMs){
-      if (state.failed || isWin() || state.winModalShown) return;
+      if (state.winModalShown || state.failModalShown) return;
+      for (const p of state.confetti) {
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vy += 0.14;
+        p.life -= 1;
+      }
+      state.confetti = state.confetti.filter(p => p.life > 0);
+      if (state.failed || isWin()) return;
       state.timeLeft = Math.max(0, state.timeLeft - dtMs / 1000);
       if (state.timeLeft <= 0) {
-        state.failed = true;
-        state.message = '状态：时间耗尽，失败！';
-        setTimeout(() => loadLevel(state.levelIndex), 700);
+        showFailModal('时间耗尽，挑战失败！请重新尝试。');
         return;
       }
 
@@ -552,6 +632,20 @@
       ctx.lineWidth = 2;
       ctx.strokeRect(px, py, w, h);
       ctx.lineWidth = 1;
+    }
+
+    function spawnConfetti(x, y){
+      const colors = ['#ff5a6d','#ffd24f','#6df7a7','#66d0ff','#ffffff'];
+      for (let i=0;i<26;i++) {
+        state.confetti.push({
+          x: x*TILE + TILE/2,
+          y: y*TILE + TILE/2,
+          vx: (Math.random()-0.5)*5,
+          vy: -2 - Math.random()*4,
+          life: 42 + Math.random()*25,
+          color: colors[i%colors.length],
+        });
+      }
     }
 
     function draw(time = performance.now()){
@@ -698,6 +792,16 @@
           ctx.strokeRect(px+3,py+3,TILE-6,TILE-6);
           ctx.lineWidth = 1;
         }
+        if (state.fixedBoxes.has(k)) {
+          ctx.fillStyle = '#ffd84f';
+          ctx.beginPath();
+          ctx.moveTo(px+TILE/2, py+14);
+          ctx.lineTo(px+TILE/2+7, py+22);
+          ctx.lineTo(px+TILE/2, py+30);
+          ctx.lineTo(px+TILE/2-7, py+22);
+          ctx.closePath();
+          ctx.fill();
+        }
       }
 
       const p = state.player;
@@ -724,6 +828,31 @@
         ctx.fillStyle='#4a2018';
         ctx.beginPath(); ctx.arc(mx+TILE/2-3,my+20,1.4,0,Math.PI*2); ctx.fill();
         ctx.beginPath(); ctx.arc(mx+TILE/2+3,my+20,1.4,0,Math.PI*2); ctx.fill();
+      }
+
+      // Success feedback: bigger red flags on fixed castle goals
+      for (const k of state.fixedBoxes) {
+        if (!state.goals.has(k)) continue;
+        const {x,y} = fromKey(k);
+        const gx = x*TILE, gy = y*TILE;
+        const pulse = 1 + Math.sin(t * 6) * 0.08;
+        ctx.strokeStyle = '#7a8497';
+        ctx.beginPath();
+        ctx.moveTo(gx+44, gy+8);
+        ctx.lineTo(gx+44, gy+34);
+        ctx.stroke();
+        ctx.fillStyle = '#ff2e43';
+        ctx.beginPath();
+        ctx.moveTo(gx+44, gy+8);
+        ctx.lineTo(gx+44 + 15*pulse, gy+12);
+        ctx.lineTo(gx+44, gy+16);
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      for (const p of state.confetti) {
+        ctx.fillStyle = p.color;
+        ctx.fillRect(p.x, p.y, 4, 4);
       }
     }
 
@@ -767,9 +896,11 @@
       }
       pushHistory();
       state.boxes.delete(target);
+      state.fixedBoxes.delete(target);
       state.bombs--;
       state.message = '状态：炸弹生效，清除了一个箱子';
       computeDeadlocks();
+      if (checkUnsolvableState()) return;
       updateHUD();
       draw();
     }
@@ -793,6 +924,7 @@
       collectGemAt(state.player.x, state.player.y);
       checkMonsterCollision();
       computeDeadlocks();
+      if (checkUnsolvableState()) return;
       updateHUD();
       draw();
     }
@@ -860,6 +992,10 @@
     document.getElementById('confirmNextBtn').onclick = () => {
       winModal.classList.remove('show');
       loadLevel((state.levelIndex + 1) % LEVELS.length);
+    };
+    document.getElementById('retryBtn').onclick = () => {
+      failModal.classList.remove('show');
+      loadLevel(state.levelIndex);
     };
 
     function startRenderLoop(){
