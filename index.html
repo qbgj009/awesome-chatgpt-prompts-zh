@@ -80,8 +80,8 @@
     #levelSelect button.active { outline: 3px solid var(--accent); }
 
     .game-wrap {
-      perspective: 900px;
-      transform-style: preserve-3d;
+      perspective: none;
+      transform-style: flat;
       width: min(96vw, 860px);
       display: grid;
       place-items: center;
@@ -94,7 +94,7 @@
       background: #1f2a1c;
       width: min(94vw, 780px);
       height: auto;
-      transform: rotateX(14deg);
+      transform: none;
       filter: saturate(1.08) contrast(1.03);
     }
     .tips {
@@ -108,6 +108,28 @@
     }
     .danger { color: #ff9d9d; }
     .ok { color: #a4ffc2; }
+    .modal-mask {
+      position: fixed;
+      inset: 0;
+      background: rgba(12,18,28,.65);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 50;
+      backdrop-filter: blur(2px);
+    }
+    .modal-mask.show { display: flex; }
+    .modal {
+      width: min(90vw, 420px);
+      background: linear-gradient(180deg, #2a3652, #1f2738);
+      border: 2px solid #5d7098;
+      border-radius: 16px;
+      box-shadow: 0 18px 40px rgba(0,0,0,.45);
+      padding: 20px;
+      text-align: center;
+    }
+    .modal h2 { margin: 0 0 10px; color: #ffe8a4; }
+    .modal p { margin: 0 0 16px; color: #d8e7ff; }
   </style>
 </head>
 <body>
@@ -144,6 +166,13 @@
     <span class="ok">趣味机制</span>：收集全部宝石可获得额外评价；小怪会巡逻，碰到即失败；地刺会周期性启闭。<br/>
     <span class="ok">通关条件</span>：所有箱子都到目标点（绿色符文）上。
   </div>
+  <div class="modal-mask" id="winModal">
+    <div class="modal">
+      <h2>🎉 恭喜通关！</h2>
+      <p id="winText">你成功完成了本关，准备进入下一关挑战。</p>
+      <button id="confirmNextBtn">确认进入下一关</button>
+    </div>
+  </div>
 
   <script>
     const TILE = 60;
@@ -152,85 +181,86 @@
 
     const LEVELS = [
       {
-        name: '新手试炼 · 1箱',
+        name: '城堡训练场 · 2箱',
         bombs: 0,
         teleports: 0,
         timeLimit: 90,
         map: [
-          '##########',
-          '#........#',
-          '#..G..C..#',
-          '#..B.....#',
-          '#..P.....#',
-          '#........#',
-          '##########'
-        ]
-      },
-      {
-        name: '地牢回廊 · 2箱',
-        bombs: 1,
-        teleports: 0,
-        timeLimit: 120,
-        map: [
           '###########',
-          '#....D....#',
-          '#..G..G...#',
-          '#..B..B.C.#',
-          '#.....P...#',
-          '#...MS....#',
+          '#...G.G...#',
+          '#...B.B...#',
+          '#.....C...#',
+          '#....P....#',
+          '#.........#',
           '###########'
         ]
       },
       {
-        name: '尖刺错位 · 3箱',
+        name: '要塞长廊 · 3箱',
         bombs: 1,
-        teleports: 1,
-        timeLimit: 145,
+        teleports: 0,
+        timeLimit: 120,
         map: [
           '############',
-          '#..G....G..#',
-          '#..B.##.B..#',
-          '#..C.S..M..#',
-          '#..##.T##..#',
-          '#..B....G..#',
-          '#....P.....#',
-          '#...D...T..#',
+          '#..G..#..G.#',
+          '#..B..#..B.#',
+          '#..C..#..C.#',
+          '#..B..#..G.#',
+          '#..P..#..M.#',
+          '#.....S....#',
           '############'
         ]
       },
       {
-        name: '监牢迷宫 · 4箱',
+        name: '地牢棋局 · 4箱',
         bombs: 1,
         teleports: 1,
-        timeLimit: 170,
+        timeLimit: 145,
         map: [
           '#############',
           '#G....#....G#',
           '#B.B..#..B.B#',
-          '#..M..#..C..#',
+          '#.....#..C..#',
           '#..###S###..#',
-          '#....DP.....#',
-          '#.....#.....#',
+          '#....TPT....#',
+          '#..C..#..M..#',
           '#G....#....G#',
           '#############'
         ]
       },
       {
-        name: '大师挑战 · 5箱',
+        name: '王城双桥 · 5箱',
+        bombs: 1,
+        teleports: 1,
+        timeLimit: 170,
+        map: [
+          '##############',
+          '#G...#..#...G#',
+          '#B.B.#..#..B.#',
+          '#..M.#S.#G.C.#',
+          '#.##T####T##.#',
+          '#..B....B....#',
+          '#....D..D....#',
+          '#...G#P.#G...#',
+          '##############'
+        ]
+      },
+      {
+        name: '皇室终局 · 6箱',
         bombs: 2,
         teleports: 1,
         timeLimit: 200,
         map: [
-          '##############',
-          '#G...#..#...G#',
-          '#B.B.#S.#.B.B#',
-          '#..M.#C.#....#',
-          '#.##T####T##.#',
-          '#....D..D....#',
-          '#..B....B....#',
-          '#....#P.#....#',
-          '#G...#..#...G#',
-          '##############'
+          '###############',
+          '#G...#...#...G#',
+          '#B.B.#.S.#.B.B#',
+          '#...M#...#..G.#',
+          '#.###T###T###.#',
+          '#..B...C...B..#',
+          '#...#..P..#...#',
+          '#G..#..C..#..G#',
+          '#...#..G..#...#',
+          '###############'
         ]
       }
     ];
@@ -259,6 +289,7 @@
       timeLeft: 0,
       lastTick: 0,
       monsterTimer: 0,
+      winModalShown: false,
     };
 
     const canvas = document.getElementById('game');
@@ -272,6 +303,8 @@
       fun: document.getElementById('funInfo'),
       state: document.getElementById('stateInfo'),
     };
+    const winModal = document.getElementById('winModal');
+    const winText = document.getElementById('winText');
 
     function toKey(x,y){ return `${x},${y}`; }
     function fromKey(k){ const [x,y]=k.split(',').map(Number); return {x,y}; }
@@ -289,6 +322,8 @@
       state.timeLeft = LEVELS[index].timeLimit || 120;
       state.lastTick = performance.now();
       state.monsterTimer = 0;
+      state.winModalShown = false;
+      winModal.classList.remove('show');
 
       const rows = LEVELS[index].map;
       const h = rows.length;
@@ -371,7 +406,7 @@
     }
 
     function move(dx,dy){
-      if (state.failed || isWin()) return;
+      if (state.failed || isWin() || state.winModalShown) return;
       state.lastDir = {x:dx,y:dy};
       const nx = state.player.x + dx;
       const ny = state.player.y + dy;
@@ -410,6 +445,7 @@
       if (isWin()) {
         state.message = '状态：通关成功 🎉';
         updateHUD();
+        showWinModal();
       }
     }
 
@@ -437,8 +473,15 @@
       return false;
     }
 
+    function showWinModal(){
+      if (state.winModalShown) return;
+      state.winModalShown = true;
+      winText.textContent = `你完成了 ${LEVELS[state.levelIndex].name}，步数 ${state.steps}，准备进入下一关！`;
+      winModal.classList.add('show');
+    }
+
     function updateDynamic(dtMs){
-      if (state.failed || isWin()) return;
+      if (state.failed || isWin() || state.winModalShown) return;
       state.timeLeft = Math.max(0, state.timeLeft - dtMs / 1000);
       if (state.timeLeft <= 0) {
         state.failed = true;
@@ -601,10 +644,28 @@
           }
 
           if (state.goals.has(key)) {
-            ctx.fillStyle = 'rgba(67,211,132,.25)';
-            ctx.beginPath(); ctx.arc(px+TILE/2, py+TILE/2, 16, 0, Math.PI*2); ctx.fill();
-            ctx.strokeStyle = '#43d384'; ctx.lineWidth = 2;
-            ctx.beginPath(); ctx.arc(px+TILE/2, py+TILE/2, 11, 0, Math.PI*2); ctx.stroke();
+            // Castle goal marker + red flag
+            ctx.fillStyle = '#adb9cf';
+            ctx.fillRect(px+17, py+24, 26, 18);
+            ctx.fillStyle = '#c9d4e7';
+            ctx.fillRect(px+14, py+20, 8, 22);
+            ctx.fillRect(px+38, py+20, 8, 22);
+            ctx.fillStyle = '#6f7d96';
+            ctx.fillRect(px+27, py+30, 6, 12);
+            ctx.strokeStyle = 'rgba(255,255,255,.38)';
+            ctx.strokeRect(px+17, py+24, 26, 18);
+            ctx.strokeStyle = '#6d7484';
+            ctx.beginPath();
+            ctx.moveTo(px+30, py+12);
+            ctx.lineTo(px+30, py+26);
+            ctx.stroke();
+            ctx.fillStyle = '#ff4d5a';
+            ctx.beginPath();
+            ctx.moveTo(px+30, py+12);
+            ctx.lineTo(px+44, py+16);
+            ctx.lineTo(px+30, py+20);
+            ctx.closePath();
+            ctx.fill();
           }
         }
       }
@@ -682,7 +743,7 @@
     }
 
     function useBomb(){
-      if (state.bombs <= 0 || state.failed || isWin()) return;
+      if (state.bombs <= 0 || state.failed || isWin() || state.winModalShown) return;
       const dirs = [state.lastDir, {x:1,y:0}, {x:-1,y:0}, {x:0,y:1}, {x:0,y:-1}];
       let target = null;
       for (const d of dirs) {
@@ -714,7 +775,7 @@
     }
 
     function useTeleport(){
-      if (state.teleports <= 0 || state.failed || isWin()) return;
+      if (state.teleports <= 0 || state.failed || isWin() || state.winModalShown) return;
       const cells = [];
       for (let y=0; y<state.grid.length; y++) {
         for (let x=0; x<state.grid[0].length; x++) {
@@ -794,6 +855,10 @@
     document.getElementById('bombBtn').onclick = () => useBomb();
     document.getElementById('teleportBtn').onclick = () => useTeleport();
     document.getElementById('nextBtn').onclick = () => {
+      loadLevel((state.levelIndex + 1) % LEVELS.length);
+    };
+    document.getElementById('confirmNextBtn').onclick = () => {
+      winModal.classList.remove('show');
       loadLevel((state.levelIndex + 1) % LEVELS.length);
     };
 
