@@ -119,6 +119,7 @@
       <span class="chip" id="stepInfo">步数：0</span>
       <span class="chip" id="goalInfo">完成：0/0</span>
       <span class="chip" id="propInfo">道具：炸弹0 / 传送0</span>
+      <span class="chip" id="funInfo">宝石：0/0 · 倒计时：0</span>
       <span class="chip" id="stateInfo">状态：进行中</span>
     </div>
     <div class="buttons">
@@ -140,23 +141,25 @@
     操作：<b>方向键 / WASD / 触屏滑动</b>。规则：只能推不能拉，一次最多推一个箱子。<br/>
     <span class="danger">地刺</span>：玩家踩到会失败并重开当前关。<span class="danger">角落警告</span>：若箱子被推入非目标死角将高亮提示。<br/>
     <span class="ok">道具</span>：按 <b>B</b> 使用炸弹清除相邻箱子；按 <b>T</b> 使用传送随机换位（每关次数有限）。<br/>
+    <span class="ok">趣味机制</span>：收集全部宝石可获得额外评价；小怪会巡逻，碰到即失败；地刺会周期性启闭。<br/>
     <span class="ok">通关条件</span>：所有箱子都到目标点（绿色符文）上。
   </div>
 
   <script>
     const TILE = 60;
     const LIGHT = { x: -0.62, y: -0.45, z: 0.64 };
-    const TYPES = { WALL:'#', FLOOR:'.', GOAL:'G', PLAYER:'P', BOX:'B', SPIKE:'S', DUNGEON:'D', PORTAL:'T' };
+    const TYPES = { WALL:'#', FLOOR:'.', GOAL:'G', PLAYER:'P', BOX:'B', SPIKE:'S', DUNGEON:'D', PORTAL:'T', GEM:'C', MONSTER:'M' };
 
     const LEVELS = [
       {
         name: '新手试炼 · 1箱',
         bombs: 0,
         teleports: 0,
+        timeLimit: 90,
         map: [
           '##########',
           '#........#',
-          '#..G.....#',
+          '#..G..C..#',
           '#..B.....#',
           '#..P.....#',
           '#........#',
@@ -167,13 +170,14 @@
         name: '地牢回廊 · 2箱',
         bombs: 1,
         teleports: 0,
+        timeLimit: 120,
         map: [
           '###########',
           '#....D....#',
           '#..G..G...#',
-          '#..B..B...#',
+          '#..B..B.C.#',
           '#.....P...#',
-          '#....S....#',
+          '#...MS....#',
           '###########'
         ]
       },
@@ -181,11 +185,12 @@
         name: '尖刺错位 · 3箱',
         bombs: 1,
         teleports: 1,
+        timeLimit: 145,
         map: [
           '############',
           '#..G....G..#',
           '#..B.##.B..#',
-          '#....S.....#',
+          '#..C.S..M..#',
           '#..##.T##..#',
           '#..B....G..#',
           '#....P.....#',
@@ -197,11 +202,12 @@
         name: '监牢迷宫 · 4箱',
         bombs: 1,
         teleports: 1,
+        timeLimit: 170,
         map: [
           '#############',
           '#G....#....G#',
           '#B.B..#..B.B#',
-          '#.....#.....#',
+          '#..M..#..C..#',
           '#..###S###..#',
           '#....DP.....#',
           '#.....#.....#',
@@ -213,11 +219,12 @@
         name: '大师挑战 · 5箱',
         bombs: 2,
         teleports: 1,
+        timeLimit: 200,
         map: [
           '##############',
           '#G...#..#...G#',
           '#B.B.#S.#.B.B#',
-          '#....#..#....#',
+          '#..M.#C.#....#',
           '#.##T####T##.#',
           '#....D..D....#',
           '#..B....B....#',
@@ -235,6 +242,8 @@
       spikes: new Set(),
       dungeons: new Set(),
       portals: [],
+      gems: new Set(),
+      monsters: [],
       boxes: new Set(),
       player: {x:0,y:0},
       steps: 0,
@@ -246,6 +255,10 @@
       lastDir: {x:0,y:1},
       message: '状态：进行中',
       animTime: 0,
+      collectedGems: 0,
+      timeLeft: 0,
+      lastTick: 0,
+      monsterTimer: 0,
     };
 
     const canvas = document.getElementById('game');
@@ -256,6 +269,7 @@
       step: document.getElementById('stepInfo'),
       goal: document.getElementById('goalInfo'),
       prop: document.getElementById('propInfo'),
+      fun: document.getElementById('funInfo'),
       state: document.getElementById('stateInfo'),
     };
 
@@ -266,10 +280,15 @@
       state.levelIndex = index;
       state.grid = [];
       state.goals.clear(); state.spikes.clear(); state.dungeons.clear(); state.boxes.clear(); state.portals = [];
+      state.gems.clear(); state.monsters = [];
       state.steps = 0; state.history = []; state.failed = false;
       state.bombs = LEVELS[index].bombs || 0;
       state.teleports = LEVELS[index].teleports || 0;
       state.message = '状态：进行中';
+      state.collectedGems = 0;
+      state.timeLeft = LEVELS[index].timeLimit || 120;
+      state.lastTick = performance.now();
+      state.monsterTimer = 0;
 
       const rows = LEVELS[index].map;
       const h = rows.length;
@@ -286,6 +305,8 @@
           if (ch === TYPES.SPIKE) state.spikes.add(toKey(x,y));
           if (ch === TYPES.DUNGEON) state.dungeons.add(toKey(x,y));
           if (ch === TYPES.PORTAL) state.portals.push({x,y});
+          if (ch === TYPES.GEM) state.gems.add(toKey(x,y));
+          if (ch === TYPES.MONSTER) state.monsters.push({x,y,dir:1,axis:(x+y)%2===0?'x':'y'});
           if (ch === TYPES.BOX) state.boxes.add(toKey(x,y));
           if (ch === TYPES.PLAYER) state.player = {x,y};
           state.grid[y][x] = ground;
@@ -307,6 +328,10 @@
         bombs: state.bombs,
         teleports: state.teleports,
         message: state.message,
+        collectedGems: state.collectedGems,
+        gems: new Set([...state.gems]),
+        monsters: state.monsters.map(m => ({...m})),
+        timeLeft: state.timeLeft,
       });
       if (state.history.length > 80) state.history.shift();
     }
@@ -319,6 +344,10 @@
       state.bombs = snapshot.bombs;
       state.teleports = snapshot.teleports;
       state.message = snapshot.message;
+      state.collectedGems = snapshot.collectedGems;
+      state.gems = new Set([...snapshot.gems]);
+      state.monsters = snapshot.monsters.map(m => ({...m}));
+      state.timeLeft = snapshot.timeLeft;
       computeDeadlocks();
       updateHUD();
       draw();
@@ -328,6 +357,18 @@
       return y < 0 || y >= state.grid.length || x < 0 || x >= state.grid[0].length || state.grid[y][x] === TYPES.WALL;
     }
     function hasBox(x,y){ return state.boxes.has(toKey(x,y)); }
+    function isSpikeActive(timeMs = state.animTime){
+      return Math.floor(timeMs / 900) % 2 === 0;
+    }
+
+    function collectGemAt(x, y){
+      const k = toKey(x,y);
+      if (state.gems.has(k)) {
+        state.gems.delete(k);
+        state.collectedGems++;
+        state.message = '状态：收集到宝石 ✨';
+      }
+    }
 
     function move(dx,dy){
       if (state.failed || isWin()) return;
@@ -353,14 +394,16 @@
         state.message = '状态：进行中';
       }
 
-      if (state.spikes.has(toKey(state.player.x,state.player.y))) {
+      tryPortal();
+      collectGemAt(state.player.x, state.player.y);
+
+      if (state.spikes.has(toKey(state.player.x,state.player.y)) && isSpikeActive()) {
         state.failed = true;
-        state.message = '状态：踩中地刺，失败！';
+        state.message = '状态：踩中激活地刺，失败！';
         setTimeout(() => loadLevel(state.levelIndex), 700);
       }
 
-      tryPortal();
-
+      checkMonsterCollision();
       computeDeadlocks();
       updateHUD();
       draw();
@@ -380,6 +423,46 @@
         state.player = {x: target.x, y: target.y};
         state.message = '状态：进入传送门！';
       }
+    }
+
+    function checkMonsterCollision(){
+      for (const m of state.monsters) {
+        if (m.x === state.player.x && m.y === state.player.y) {
+          state.failed = true;
+          state.message = '状态：被巡逻怪物抓住，失败！';
+          setTimeout(() => loadLevel(state.levelIndex), 700);
+          return true;
+        }
+      }
+      return false;
+    }
+
+    function updateDynamic(dtMs){
+      if (state.failed || isWin()) return;
+      state.timeLeft = Math.max(0, state.timeLeft - dtMs / 1000);
+      if (state.timeLeft <= 0) {
+        state.failed = true;
+        state.message = '状态：时间耗尽，失败！';
+        setTimeout(() => loadLevel(state.levelIndex), 700);
+        return;
+      }
+
+      state.monsterTimer += dtMs;
+      if (state.monsterTimer < 320) return;
+      state.monsterTimer = 0;
+      for (const m of state.monsters) {
+        const stepX = m.axis === 'x' ? m.dir : 0;
+        const stepY = m.axis === 'y' ? m.dir : 0;
+        const nx = m.x + stepX;
+        const ny = m.y + stepY;
+        if (isWall(nx,ny) || hasBox(nx,ny)) {
+          m.dir *= -1;
+          continue;
+        }
+        m.x = nx; m.y = ny;
+      }
+      checkMonsterCollision();
+      updateHUD();
     }
 
     function isCornerBlocked(x,y){
@@ -491,12 +574,26 @@
             ctx.lineWidth = 1;
           }
 
+          if (state.gems.has(key)) {
+            ctx.fillStyle = '#8ee7ff';
+            ctx.beginPath();
+            ctx.moveTo(px+TILE/2, py+12);
+            ctx.lineTo(px+TILE/2+11, py+TILE/2);
+            ctx.lineTo(px+TILE/2, py+TILE-12);
+            ctx.lineTo(px+TILE/2-11, py+TILE/2);
+            ctx.closePath();
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(255,255,255,.7)';
+            ctx.stroke();
+          }
+
           if (state.spikes.has(key)) {
-            ctx.fillStyle = '#7c7f90';
+            const active = isSpikeActive(time);
+            ctx.fillStyle = active ? '#7c7f90' : '#4e5260';
             for (let i=0;i<3;i++) {
               ctx.beginPath();
               ctx.moveTo(px+8+i*16, py+TILE-8);
-              ctx.lineTo(px+16+i*16, py+10);
+              ctx.lineTo(px+16+i*16, py+(active?10:26));
               ctx.lineTo(px+24+i*16, py+TILE-8);
               ctx.closePath();
               ctx.fill();
@@ -555,6 +652,18 @@
       ctx.fillStyle='#1f4e69';
       ctx.fillRect(px+20,py+30+idleBob,20,14);
       drawOutlineRect(px+6, py+6, TILE-12, TILE-13, 'rgba(220,247,255,.5)');
+
+      for (const m of state.monsters) {
+        const mx = m.x * TILE, my = m.y * TILE;
+        ctx.fillStyle = 'rgba(0,0,0,.26)';
+        ctx.beginPath(); ctx.ellipse(mx+TILE/2+4,my+TILE-8,15,8,-0.2,0,Math.PI*2); ctx.fill();
+        drawTile3D(m.x,m.y,'#ff8b71','#b9543b');
+        ctx.fillStyle='#fff3dd';
+        ctx.beginPath(); ctx.arc(mx+TILE/2,my+20,8,0,Math.PI*2); ctx.fill();
+        ctx.fillStyle='#4a2018';
+        ctx.beginPath(); ctx.arc(mx+TILE/2-3,my+20,1.4,0,Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.arc(mx+TILE/2+3,my+20,1.4,0,Math.PI*2); ctx.fill();
+      }
     }
 
     function updateHUD(){
@@ -566,8 +675,9 @@
       info.step.textContent = `步数：${state.steps}`;
       info.goal.textContent = `完成：${done}/${state.goals.size}`;
       info.prop.textContent = `道具：炸弹${state.bombs} / 传送${state.teleports}`;
+      info.fun.textContent = `宝石：${state.collectedGems}/${state.collectedGems + state.gems.size} · 倒计时：${Math.ceil(state.timeLeft)}`;
       if (!state.failed && state.message === '状态：进行中' && state.deadlockedBoxes.size) state.message = '状态：警告，箱子可能卡死';
-      if (isWin()) state.message = '状态：通关成功 🎉';
+      if (isWin()) state.message = state.gems.size === 0 ? '状态：完美通关（宝石全收集）🏆' : '状态：通关成功 🎉';
       info.state.textContent = state.message;
     }
 
@@ -619,6 +729,8 @@
       state.player = target;
       state.teleports--;
       state.message = '状态：传送成功';
+      collectGemAt(state.player.x, state.player.y);
+      checkMonsterCollision();
       computeDeadlocks();
       updateHUD();
       draw();
@@ -687,6 +799,10 @@
 
     function startRenderLoop(){
       const tick = (now) => {
+        if (!state.lastTick) state.lastTick = now;
+        const dt = Math.min(60, now - state.lastTick);
+        state.lastTick = now;
+        updateDynamic(dt);
         draw(now);
         requestAnimationFrame(tick);
       };
