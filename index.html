@@ -194,10 +194,10 @@
         timeLimit: 90,
         map: [
           '###########',
-          '#...G.G...#',
-          '#...B.B...#',
-          '#.....C...#',
+          '#....G....#',
+          '#..B...B..#',
           '#....P....#',
+          '#..C...G..#',
           '#.........#',
           '###########'
         ]
@@ -209,11 +209,11 @@
         timeLimit: 120,
         map: [
           '############',
-          '#..G.....G.#',
-          '#..B..#..B.#',
-          '#..C..#..C.#',
-          '#..B.....G.#',
-          '#..P..#..M.#',
+          '#..G....G..#',
+          '#..B.##.B..#',
+          '#..C....C..#',
+          '#..B....G..#',
+          '#....P..M..#',
           '#.....S....#',
           '############'
         ]
@@ -225,13 +225,13 @@
         timeLimit: 145,
         map: [
           '#############',
-          '#G....#....G#',
-          '#B.B..#..B.B#',
-          '#.....#..C..#',
-          '#..###S###..#',
-          '#....TPT....#',
-          '#..C..#..M..#',
-          '#G....#....G#',
+          '#G...#...G..#',
+          '#B.B.#.B.B..#',
+          '#....#..C...#',
+          '#..##S##....#',
+          '#...TP.T....#',
+          '#....#..M...#',
+          '#..G.#...G..#',
           '#############'
         ]
       },
@@ -242,13 +242,14 @@
         timeLimit: 170,
         map: [
           '##############',
-          '#G...#..#...G#',
-          '#B.B.#..#..B.#',
-          '#..M.#S.#G.C.#',
-          '#.##T####T##.#',
-          '#..B....B....#',
-          '#....D..D....#',
-          '#...G#P.#G...#',
+          '#G..#....#..G#',
+          '#B.B#....#.B.#',
+          '#...#S.C.#...#',
+          '#..M######...#',
+          '#..B..P......#',
+          '#...T....T...#',
+          '#..G#....#G..#',
+          '#...#....#...#',
           '##############'
         ]
       },
@@ -259,14 +260,15 @@
         timeLimit: 200,
         map: [
           '###############',
-          '#G...#...#...G#',
-          '#B.B.#.S.#.B.B#',
-          '#...M#...#..G.#',
-          '#.###T###T###.#',
-          '#..B...C...B..#',
-          '#...#..P..#...#',
-          '#G..#..C..#..G#',
-          '#...#..G..#...#',
+          '#G..#.....#..G#',
+          '#B.B#.S.S.#B.B#',
+          '#...#..M..#...#',
+          '#..T###.###T..#',
+          '#..B...P...B..#',
+          '#...#..C..#...#',
+          '#G..#.....#..G#',
+          '#...#..C..#...#',
+          '#..G.......G..#',
           '###############'
         ]
       }
@@ -426,6 +428,7 @@
     function move(dx,dy){
       if (state.failed || isWin() || state.winModalShown) return;
       state.lastDir = {x:dx,y:dy};
+      let movedBox = false;
       const nx = state.player.x + dx;
       const ny = state.player.y + dy;
       if (isWall(nx,ny)) return;
@@ -436,6 +439,7 @@
         const bx = nx + dx, by = ny + dy;
         if (isWall(bx,by) || hasBox(bx,by)) return; // 一次仅推一个
         pushHistory();
+        movedBox = true;
         state.boxes.delete(destKey);
         state.fixedBoxes.delete(destKey);
         state.boxes.add(toKey(bx,by));
@@ -465,7 +469,7 @@
 
       checkMonsterCollision();
       computeDeadlocks();
-      if (checkUnsolvableState()) return;
+      if (movedBox && checkUnsolvableState()) return;
       updateHUD();
       draw();
       if (isWin()) {
@@ -519,10 +523,12 @@
       const visited = new Set();
       const queue = [];
       for (const g of state.goals) {
+        if (state.fixedBoxes.has(g)) continue;
         const {x:gx,y:gy} = fromKey(g);
         queue.push([gx,gy]);
         visited.add(g);
       }
+      if (!queue.length) return true;
       const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
       while (queue.length) {
         const [cx, cy] = queue.shift();
@@ -924,7 +930,6 @@
       collectGemAt(state.player.x, state.player.y);
       checkMonsterCollision();
       computeDeadlocks();
-      if (checkUnsolvableState()) return;
       updateHUD();
       draw();
     }
